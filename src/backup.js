@@ -228,10 +228,14 @@ class Backup {
           console.log("not found, skip");
           return null;
         }
+        else if (err && err.response && err.response.status === 403){
+          console.log("UnAuthorized, skip");
+          return null;
+        }
         else{
           console.log("err!!")
           console.error(err)
-          throw err;
+          return null;
         }
       }
       console.log("how did we get here?")
