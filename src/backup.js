@@ -19,14 +19,7 @@ class Backup {
   constructor ({ chatId, authToken, target }) {
     this.target = target;
     this.chatId = chatId;
-    this.instance = axios.create({
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        Authorization: `Bearer ${authToken}`,
-        'Sec-Fetch-Mode': 'cors',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36'
-      }
-    });
+    createInstance(authToken)
   }
 
   async run () {
@@ -43,6 +36,17 @@ class Backup {
         return null;
       }
     }
+  }
+
+  createInstance(authToken){
+    this.instance = axios.create({
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        Authorization: `Bearer ${authToken}`,
+        'Sec-Fetch-Mode': 'cors',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36'
+      }
+    });
   }
 
   createTarget (location) {
@@ -153,31 +157,40 @@ class Backup {
   async getImages () {
     const pages = await this.getPages();
 
-    const index = {};
+    let index = {}
     let imageIdx = 0;
+    try{
+      await fsAPI.readFile()
+      index = writeFile(path.resolve(this.target, 'images.json'), 'utf8');
+      imageIdx = Object.keys(index).length + 1;
+    }
+    catch (err){
+    }
+    
+    try{
+      // loop over pages
+      for (const page of pages) {
+        const data = await fsAPI.readFile(path.resolve(this.target, page), 'utf8');
+        const messages = JSON.parse(data);
 
-    // loop over pages
-    for (const page of pages) {
-      const data = await fsAPI.readFile(path.resolve(this.target, page), 'utf8');
-      const messages = JSON.parse(data);
+        // loop over messages
+        for (const message of messages) {
+          if (message.body.contentType === 'html') {
+            // detect image
+            const imageUrls = message.body.content.match(UPLOADED_IMAGE_MATCH);
+            if (imageUrls) {
+              for (const imageUrl of imageUrls) {
+                if (!index[imageUrl]) {
+                  const targetFilename = 'image-' + `0000${imageIdx++}`.slice(-5);
 
-      // loop over messages
-      for (const message of messages) {
-        if (message.body.contentType === 'html') {
-          // detect image
-          const imageUrls = message.body.content.match(UPLOADED_IMAGE_MATCH);
-          if (imageUrls) {
-            for (const imageUrl of imageUrls) {
-              if (!index[imageUrl]) {
-                const targetFilename = 'image-' + `0000${imageIdx++}`.slice(-5);
+                  console.log('downloading', targetFilename);
+                  const res = await this.downloadOneImage(imageUrl);
+                  if (res){
+                    res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
+                    await pipeDone(res.data);
 
-                console.log('downloading', targetFilename);
-                const res = await this.downloadOneImage(imageUrl);
-                if (res){
-                  res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
-                  await pipeDone(res.data);
-
-                  index[imageUrl] = targetFilename;
+                    index[imageUrl] = targetFilename;
+                  }
                 }
               }
             }
@@ -185,9 +198,11 @@ class Backup {
         }
       }
     }
-
-    // write image index
-    await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
+    catch(err){
+      // write image index
+      await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
+      throw err
+    }
   }
 
   async downloadOneImage(url){
@@ -222,7 +237,8 @@ class Backup {
         }
         else if (err && err.response && err.response.status === 401){
           console.log("Unauthorized! \nPlease refresh JWT token!");
-          throw Error("Unauthorized! Please refresh JWT token!")
+          const authToken = await ask("Enter new JWT token:")
+          createInstance(authToken);
         }
         else if (err && err.response && err.response.status === 404){
           console.log("not found, skip");
@@ -350,3 +366,13 @@ function pause(milliseconds) {
 }
 
 module.exports = Backup;
+
+function ask(question) {
+  return new Promise((resolve, reject) => {
+    rl.question(`${question} `, answer => {
+      const value = answer.trim();
+      if (value === '') return reject(new Error('missing value'));
+      return resolve(answer);
+    });
+  });
+}
