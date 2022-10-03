@@ -229,7 +229,7 @@ class Backup {
           return null;
         }
         else if (err && err.response && err.response.status === 403){
-          console.log("UnAuthorized, skip");
+          console.log("Forbidden, skip");
           return null;
         }
         else{
