@@ -33,7 +33,16 @@ class Backup {
     await this.createTarget();
     await this.getMessages();
     await this.getImages();
-    await this.createHtml();
+  
+    try {
+      await this.createHtml();
+    }
+    catch (err){
+      if (err && err.response && err.response.status === 401){
+        console.log("Unauthorized! \nPlease refresh JWT token!");
+        return null;
+      }
+    }
   }
 
   createTarget (location) {
@@ -62,28 +71,77 @@ class Backup {
     // URL to first page (most recent messages)
     let url = `https://graph.microsoft.com/beta/me/chats/${this.chatId}/messages`;
     let page = 0;
+    let wait = 25;
+    let retry = false;
 
-    while (true) {
-      const pageNum = `0000${page++}`.slice(-5);
-
-      console.log(`retrieve page ${pageNum}`);
-      const res = await this.instance.get(url);
-
-      if (res.data.value && res.data.value.length) {
-        await fsAPI.writeFile(
-          path.resolve(this.target, `messages-${pageNum}.json`),
-          JSON.stringify(res.data.value, null, '  '),
-          'utf8');
+    while (true) {      
+      try {
+        const result = await this.getMessage(url, page)
+        if (result.continue){
+          url = result.nextUrl;
+          page = result.nextPage;
+          retry = false;
+        }
+        else {
+          break;
+        }
       }
-
-      // if there's a next page (earlier messages) ...
-      if (res.data['@odata.count'] && res.data['@odata.nextLink']) {
-        // .. get these in the next round
-        url = res.data['@odata.nextLink'];
-      } else {
-        // otherwise we're done
-        break;
+      catch (err){
+        if (err && err.response && err.response.status === 429){
+          console.log("Grrrrr!!\nRate limited!")
+          if (err.response.headers){
+            if (err.response.headers["retry-after"]){
+              const retryAfter = err.response.headers["retry-after"];
+              console.log(`Suggested wait time is: ${retryAfter}`)
+              wait = Number(retryAfter);
+            }
+            else {
+              console.log("no retry-after header!, waiting default time");
+            }
+          }
+          if (retry){
+            wait = wait * 2;
+            wait = Math.min(wait, 3600);
+          }
+          console.log(`   Waiting ${wait} seconds`);
+          await pause(wait*1000)
+        }
+        else if (err && err.code === "ETIMEDOUT"){
+          console.log("timed out, retrying");
+        }
+        else if (err && err.response && err.response.status === 401){
+          console.log("Unauthorized! \nPlease refresh JWT token!");
+          throw Error("Unauthorized! Please refresh JWT token!");
+        }
+        else{
+          console.log("err!!")
+          console.error(err)
+        }
+        retry = true;
       }
+    }
+    console.log("finished downloading messages!\n generating html");
+    return true;
+  }
+
+  async getMessage(url, page){
+    const pageNum = `0000${page}`.slice(-5);
+    console.log(`retrieve page ${pageNum}`);
+    const res = await this.instance.get(url);
+    // if result exists, save
+    if (res.data.value && res.data.value.length) {
+      await fsAPI.writeFile(
+        path.resolve(this.target, `messages-${pageNum}.json`),
+        JSON.stringify(res.data.value, null, '  '),
+        'utf8');
+    }
+    // if there's a next page (earlier messages) ...
+    if (res.data['@odata.count'] && res.data['@odata.nextLink']) {
+      // .. get these in the next round
+      return {continue: true, nextUrl: res.data['@odata.nextLink'], nextPage: page+1}
+    } else {
+      // otherwise we're done
+      return {continue: false}
     }
   }
 
@@ -114,17 +172,13 @@ class Backup {
                 const targetFilename = 'image-' + `0000${imageIdx++}`.slice(-5);
 
                 console.log('downloading', targetFilename);
+                const res = await this.downloadOneImage(imageUrl);
+                if (res){
+                  res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
+                  await pipeDone(res.data);
 
-                const res = await this.instance({
-                  method: 'get',
-                  url: imageUrl,
-                  responseType: 'stream'
-                });
-
-                res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
-                await pipeDone(res.data);
-
-                index[imageUrl] = targetFilename;
+                  index[imageUrl] = targetFilename;
+                }
               }
             }
           }
@@ -134,6 +188,54 @@ class Backup {
 
     // write image index
     await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
+  }
+
+  async downloadOneImage(url){
+    let finished = false;
+    let wait = 10;
+    while (!finished){
+      try{
+        const res = await this.instance({
+          method: 'get',
+          url: url,
+          responseType: 'stream'
+        });
+        if (res && res.data){
+          return res
+        }
+      }
+      catch (err){
+        if (err && err.response && err.response.status === 429){
+          console.log("Grrrrr!!\nRate limited!")
+          if (err.response.headers){
+            if (err.response.headers["retry-after"]){
+              const retryAfter = err.response.headers["retry-after"];
+              console.log(`Suggested wait time is: ${retryAfter}`)
+              wait = Number(retryAfter);
+            }
+          }
+          console.log(`   Waiting ${wait} seconds`);
+          await pause(wait*1000)
+        }
+        else if (err && err.code === "ETIMEDOUT"){
+          console.log("timed out, retrying");
+        }
+        else if (err && err.response && err.response.status === 401){
+          console.log("Unauthorized! \nPlease refresh JWT token!");
+          throw Error("Unauthorized! Please refresh JWT token!")
+        }
+        else if (err && err.response && err.response.status === 404){
+          console.log("not found, skip");
+          return null;
+        }
+        else{
+          console.log("err!!")
+          console.error(err)
+          throw err;
+        }
+      }
+      console.log("how did we get here?")
+    }
   }
 
   async createHtml () {
@@ -237,6 +339,10 @@ function pipeDone (readable) {
   return new Promise((resolve, reject) => {
     readable.on('end', resolve);
   });
+}
+
+function pause(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
 module.exports = Backup;
