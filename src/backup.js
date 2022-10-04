@@ -182,7 +182,6 @@ class Backup {
     }
     
     try{
-      const allImageDownloadingPromises = []
       // loop over pages
       for (const page of pages) {
         const data = await fsAPI.readFile(path.resolve(this.target, page), 'utf8');
@@ -197,19 +196,18 @@ class Backup {
               for (const imageUrl of imageUrls) {
                 if (!index[imageUrl]) {
                   index[imageUrl] = true;
-                  allImageDownloadingPromises.push(downloadFunc(imageUrl))
+                  await downloadFunc(imageUrl)
                 }
               }
             }
           }
         }
       }
-      await Promise.all(allImageDownloadingPromises)
     }
     catch(err){
       // write image index
       const filteredIndex = Object.entries(index).filter(([key, value]) => typeof value === 'string');
-      index = Object.fromEntries(filtered);
+      index = Object.fromEntries(filteredIndex);
       await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
       throw err
     }
@@ -385,7 +383,5 @@ function ask(question) {
     });
   });
 }
-
-backup = new Backup({chatId, authToken, target: `out/${target}`})
 
 module.exports = Backup;
