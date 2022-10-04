@@ -160,9 +160,9 @@ class Backup {
     let index = {}
     let imageIdx = 0;
     try{
-      await fsAPI.readFile()
-      index = writeFile(path.resolve(this.target, 'images.json'), 'utf8');
+      index = await fsAPI.readFile(path.resolve(this.target, 'images.json'), 'utf8')
       imageIdx = Object.keys(index).length + 1;
+      console.log("read existing images.json");
     }
     catch (err){
     }
@@ -388,5 +388,8 @@ function ask(question) {
     });
   });
 }
+
+backup = new Backup({chatId, authToken, target: `out/${target}`})
+
 
 module.exports = Backup;
