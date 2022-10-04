@@ -166,8 +166,23 @@ class Backup {
     }
     catch (err){
     }
+
+    const downloadFunc = async (imageUrl)=>{
+      const targetFilename = 'image-' + `0000${imageIdx++}`.slice(-5);
+      console.log('downloading', targetFilename);
+      const res = await this.downloadOneImage(imageUrl);
+      if (res){
+        res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
+        await pipeDone(res.data);
+        index[imageUrl] = targetFilename;
+      }
+      else {
+        index[imageUrl] = false;
+      }
+    }
     
     try{
+      const allImageDownloadingPromises = []
       // loop over pages
       for (const page of pages) {
         const data = await fsAPI.readFile(path.resolve(this.target, page), 'utf8');
@@ -181,29 +196,25 @@ class Backup {
             if (imageUrls) {
               for (const imageUrl of imageUrls) {
                 if (!index[imageUrl]) {
-                  const targetFilename = 'image-' + `0000${imageIdx++}`.slice(-5);
-
-                  console.log('downloading', targetFilename);
-                  const res = await this.downloadOneImage(imageUrl);
-                  if (res){
-                    res.data.pipe(fs.createWriteStream(path.resolve(this.target, targetFilename)));
-                    await pipeDone(res.data);
-
-                    index[imageUrl] = targetFilename;
-                  }
+                  index[imageUrl] = true;
+                  allImageDownloadingPromises.push(downloadFunc(imageUrl))
                 }
               }
             }
           }
         }
       }
+      await Promise.all(allImageDownloadingPromises)
     }
     catch(err){
       // write image index
+      const filteredIndex = Object.entries(index).filter(([key, value]) => typeof value === 'string');
+      index = Object.fromEntries(filtered);
       await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
       throw err
     }
   }
+
 
   async downloadOneImage(url){
     let finished = false;
@@ -365,8 +376,6 @@ function pause(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-module.exports = Backup;
-
 function ask(question) {
   return new Promise((resolve, reject) => {
     rl.question(`${question} `, answer => {
@@ -376,3 +385,5 @@ function ask(question) {
     });
   });
 }
+
+module.exports = Backup;
