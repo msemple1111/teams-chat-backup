@@ -19,7 +19,7 @@ class Backup {
   constructor ({ chatId, authToken, target }) {
     this.target = target;
     this.chatId = chatId;
-    createInstance(authToken)
+    this.createInstance(authToken)
   }
 
   async run () {
@@ -249,7 +249,7 @@ class Backup {
         else if (err && err.response && err.response.status === 401){
           console.log("Unauthorized! \nPlease refresh JWT token!");
           const authToken = await ask("Enter new JWT token:")
-          createInstance(authToken);
+          this.createInstance(authToken);
         }
         else if (err && err.response && err.response.status === 404){
           console.log("not found, skip");
@@ -385,5 +385,7 @@ function ask(question) {
     });
   });
 }
+
+backup = new Backup({chatId, authToken, target: `out/${target}`})
 
 module.exports = Backup;
