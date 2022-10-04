@@ -289,12 +289,12 @@ class Backup {
 
     // write head
     await fsAPI.write(fd, `<html>
-  <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="../../messages.css">
-  </head>
-  <body>
-`);
+      <head>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="../../messages.css">
+      </head>
+      <body>
+    `);
 
     // loop over pages in reverse order
     for (let pageIdx = pages.length - 1; pageIdx >= 0; pageIdx--) {
@@ -373,6 +373,11 @@ function pipeDone (readable) {
 function pause(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
 
 function ask(question) {
   return new Promise((resolve, reject) => {
