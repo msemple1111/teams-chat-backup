@@ -393,7 +393,5 @@ function ask(question) {
   });
 }
 
-backup = new Backup({chatId, authToken, target: `out/${target}`})
-
 
 module.exports = Backup;
