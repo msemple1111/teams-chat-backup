@@ -160,11 +160,15 @@ class Backup {
     let index = {}
     let imageIdx = 0;
     try{
-      index = await fsAPI.readFile(path.resolve(this.target, 'images.json'), 'utf8')
+      const loadedIndex = await fsAPI.readFile(path.resolve(this.target, 'images.json'), 'utf8')
+      index = JSON.parse(loadedIndex)
       imageIdx = Object.keys(index).length + 1;
       console.log("read existing images.json");
     }
     catch (err){
+      console.log("couldn't read any existing images.json, creating new");
+      index = {}
+      imageIdx = 0
     }
 
     const downloadFunc = async (imageUrl)=>{
