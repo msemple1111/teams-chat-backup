@@ -215,6 +215,9 @@ class Backup {
       await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
       throw err
     }
+    const filteredIndex = Object.entries(index).filter(([key, value]) => typeof value === 'string');
+    index = Object.fromEntries(filteredIndex);
+    await fsAPI.writeFile(path.resolve(this.target, 'images.json'), JSON.stringify(index), 'utf8');
   }
 
 
@@ -392,6 +395,5 @@ function ask(question) {
     });
   });
 }
-
 
 module.exports = Backup;
